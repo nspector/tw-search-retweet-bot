@@ -1,0 +1,78 @@
+version: '3'
+services:
+  db:
+    image: mysql:8.0.19
+    container_name: mysql_container
+    ports:
+      - '3306:3306'
+    networks:
+      - app-net
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: my_db
+      MYSQL_USER: docker
+      MYSQL_PASSWORD: docker
+    volumes:
+      - ./docker/db/data:/var/lib/mysql
+    command: bash -c 'usermod -o -u 1000 mysql; groupmod -o -g 500 mysql; chown -R mysql:root /var/run/mysqld/; /entrypoint.sh mysqld --user=mysql --innodb_use_native_aio=0 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci'
+
+  app:
+    image: bot_app
+    build:
+      context: .
+      dockerfile: ${DOCKER_FILE:-Dockerfile}
+    container_name: bot_app
+    networks:
+      - app-net
+    volumes:
+      - .:/bot
+      - /bot/build
+      - script:/bot/script
+    depends_on:
+      - db
+    tty: true
+
+  #Github Action
+  gh-app:
+    image: ghcr.io/nspector/tw-search-retweet-bot:latest
+    container_name: gh_bot_app
+    networks:
+      - app-net
+    volumes:
+      - .:/bot
+      - /bot/build
+      - script:/bot/script
+    depends_on:
+      - db
+    tty: true
+    environment:
+      CONSUMER_KEY: ${CONSUMER_KEY:- }
+      CONSUMER_SECRET: ${CONSUMER_SECRET:- }
+      ACCESS_TOKEN_KEY: ${ACCESS_TOKEN_KEY:- }
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:- }
+      SEARCH_QUERY: ${SEARCH_QUERY:- }
+      SEARCH_LIMIT: ${SEARCH_LIMIT:- }
+      GITHUB_ACTIONS: ${GITHUB_ACTIONS:-false}
+
+  #Test
+  test-db:
+    image: mysql:8.0.19
+    container_name: test-mysql
+    ports:
+      - '33066:3306'
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: my_db
+      MYSQL_USER: docker
+      MYSQL_PASSWORD: docker
+    volumes:
+      - ./docker/test/data:/var/lib/mysql
+    command: bash -c 'usermod -o -u 1000 mysql; groupmod -o -g 500 mysql; chown -R mysql:root /var/run/mysqld/; /entrypoint.sh mysqld --user=mysql --innodb_use_native_aio=0 --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci'
+
+networks:
+  app-net:
+    driver: bridge
+
+volumes:
+  script:
+    driver: local

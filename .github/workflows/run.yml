@@ -1,0 +1,66 @@
+name: tw-search-retweet-bot
+on:
+  workflow_dispatch:
+  #schedule:
+  #  - cron: "*/10 * * * *"
+  repository_dispatch:
+    types:
+      - tw-webhook
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    name: Run
+    steps:
+      - name: Check is running
+        uses: actions/github-script@v4
+        id: running_count
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const runed = await github.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "run.yml"
+            });
+            return runed.data.workflow_runs.map(
+              i => i.status
+            ).filter(
+              i => i === 'in_progress'
+            ).length;
+          result-encoding: string
+      - uses: actions/checkout@v2
+        if: ${{ steps.running_count.outputs.result == '1' }}
+      - name: Get random hash
+        if: ${{ steps.running_count.outputs.result == '1' }}
+        id: hash
+        run: |
+          hash="$(sha256sum <(date '+%Y%m%d%H%M%S%s'|base64)|awk '{print $1}')"
+          echo "::set-output name=hash::${hash}"
+      - uses: actions/cache@v2
+        if: ${{ steps.running_count.outputs.result == '1' }}
+        with:
+          path: ./docker
+          key: tw_db-${{ steps.hash.outputs.hash }}
+          restore-keys: |
+            tw_db-
+      - name: Judge SEARCH_LIMIT
+        if: ${{ steps.running_count.outputs.result == '1' }}
+        id: search_limit
+        run: |
+            default="${{ secrets.SEARCH_LIMIT }}"
+            echo "::set-output name=value::${default:-100}"
+      - name: Log in to registry
+        if: ${{ steps.running_count.outputs.result == '1' }}
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u $ --password-stdin
+      - name: Run
+        if: ${{ steps.running_count.outputs.result == '1' }}
+        run: make gh-action
+        env:
+          CONSUMER_KEY: ${{ secrets.CONSUMER_KEY }}
+          CONSUMER_SECRET: ${{ secrets.CONSUMER_SECRET }}
+          ACCESS_TOKEN_KEY: ${{ secrets.ACCESS_TOKEN_KEY }}
+          ACCESS_TOKEN_SECRET: ${{ secrets.ACCESS_TOKEN_SECRET }}
+          SEARCH_QUERY: ${{ secrets.SEARCH_QUERY }}
+          SEARCH_LIMIT: ${{ steps.search_limit.outputs.value }}
+          GITHUB_ACTIONS: "true"
